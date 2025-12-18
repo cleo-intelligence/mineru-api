@@ -21,14 +21,17 @@ RUN pip install --no-cache-dir \
     uvicorn \
     python-multipart
 
-# Create simple FastAPI wrapper
+# Create app directory
 RUN mkdir -p /app
 WORKDIR /app
 
 COPY api.py /app/api.py
 
-# Expose port
-EXPOSE 8080
+# Expose port (Render uses PORT env var, default 3000)
+EXPOSE 3000
 
-# Run the API
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8080"]
+# Use PORT env var (Render sets this to 3000)
+ENV PORT=3000
+
+# Run the API using shell to expand $PORT
+CMD uvicorn api:app --host 0.0.0.0 --port $PORT
