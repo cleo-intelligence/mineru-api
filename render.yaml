@@ -5,7 +5,7 @@
 services:
   - type: web
     name: mineru-api
-    runtime: docker
+    env: docker
     region: frankfurt
     plan: standard
     healthCheckPath: /docs
