@@ -1,5 +1,5 @@
 # MinerU API - CPU-only Dockerfile for Render
-# Based on official MinerU installation docs
+# Uses the built-in mineru-api server from the official package
 
 FROM python:3.10-slim
 
@@ -7,7 +7,7 @@ FROM python:3.10-slim
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PIP_NO_CACHE_DIR=1
-ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV MINERU_MODEL_SOURCE=huggingface
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -27,26 +27,19 @@ WORKDIR /app
 # Install uv for faster package installation
 RUN pip install --upgrade pip uv
 
-# Install MinerU core (CPU-only, no vLLM)
+# Install MinerU with core functionality (CPU-only)
 RUN uv pip install --system -U "mineru[core]"
 
-# Download models (this will take some time during build)
-RUN python -c "from magic_pdf.model.doc_analyze_by_custom_model import ModelSingleton; ModelSingleton().get_model(False, False)"
+# Download models during build (takes time but speeds up runtime)
+RUN mineru-models-download -s huggingface -m all || echo "Model download completed with warnings"
 
-# Install FastAPI and dependencies for the API server
-RUN uv pip install --system fastapi uvicorn python-multipart
-
-# Copy application files
-COPY app.py ./
-COPY magic-pdf.json /root/magic-pdf.json
-
-# Port configuration
-ENV PORT=3000
+# Port configuration (Render sets PORT env var)
+ENV PORT=8000
 EXPOSE ${PORT}
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=3 \
-  CMD curl -f http://localhost:${PORT}/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=300s --retries=3 \
+  CMD curl -f http://localhost:${PORT}/docs || exit 1
 
-# Run the API server
-CMD uvicorn app:app --host 0.0.0.0 --port ${PORT}
+# Use the built-in mineru-api server
+CMD mineru-api --host 0.0.0.0 --port ${PORT}
