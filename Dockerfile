@@ -8,18 +8,15 @@ RUN apt-get update && \
     apt-get install --yes --no-install-recommends curl g++ libopencv-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Poetry 1.6.1 (has export command built-in)
-RUN curl -sSL https://install.python-poetry.org | POETRY_VERSION=1.6.1 python3 -
-
 RUN mkdir -p /app
 WORKDIR /app
 
 COPY pyproject.toml poetry.lock ./
 
-ENV PATH="/root/.local/bin:$PATH"
-
-# Export to requirements.txt then install via pip (more memory efficient)
-RUN poetry export -f requirements.txt --output requirements.txt --without-hashes && \
+# Install pip-tools and generate requirements from poetry.lock
+RUN pip install --no-cache-dir pip-tools toml && \
+    python -c "import toml; d=toml.load('pyproject.toml'); deps=d['tool']['poetry']['dependencies']; print('\\n'.join(f'{k}=={v}' if isinstance(v,str) and v[0].isdigit() else k for k,v in deps.items() if k!='python'))" > requirements.in && \
+    pip-compile requirements.in -o requirements.txt --resolver=backtracking && \
     pip install --no-cache-dir -r requirements.txt
 
 FROM $PYTHON_ENV as prod
