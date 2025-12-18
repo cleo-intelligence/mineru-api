@@ -1,0 +1,22 @@
+# MinerU API - Render Blueprint
+# Deploy: Connect this repo to Render Blueprints
+# https://dashboard.render.com/blueprints
+
+services:
+  - type: web
+    name: mineru-api
+    runtime: docker
+    region: frankfurt
+    plan: standard
+    healthCheckPath: /docs
+    envVars:
+      - key: PORT
+        value: "3000"
+      - key: WORKERS
+        value: "1"
+      - key: LOG_LEVEL
+        value: "INFO"
+    disk:
+      name: mineru-models
+      mountPath: /root/.cache
+      sizeGB: 10
