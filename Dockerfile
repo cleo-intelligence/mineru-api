@@ -1,19 +1,34 @@
-# MinerU API - Custom Dockerfile with OpenCV dependencies
-# Fixes: ImportError: libgthread-2.0.so.0: cannot open shared object file
+# MinerU API - Build from PyPI (no ghcr.io auth required)
+FROM python:3.10-slim
 
-FROM ghcr.io/opendatalab/mineru:latest
-
-# Install missing system dependencies for OpenCV
+# Install system dependencies for OpenCV and PDF processing
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender1 \
     libgl1-mesa-glx \
+    libgomp1 \
+    poppler-utils \
+    tesseract-ocr \
+    tesseract-ocr-fra \
     && rm -rf /var/lib/apt/lists/*
 
-# Expose the API port
+# Install MinerU from PyPI
+RUN pip install --no-cache-dir \
+    magic-pdf[full] \
+    fastapi \
+    uvicorn \
+    python-multipart
+
+# Create simple FastAPI wrapper
+RUN mkdir -p /app
+WORKDIR /app
+
+COPY api.py /app/api.py
+
+# Expose port
 EXPOSE 8080
 
-# Default command (from base image)
-CMD ["mineru-api", "--host", "0.0.0.0", "--port", "8080"]
+# Run the API
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8080"]
