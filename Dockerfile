@@ -8,17 +8,19 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PIP_NO_CACHE_DIR=1
 ENV MINERU_MODEL_SOURCE=huggingface
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install system dependencies with retry logic
+RUN apt-get update --fix-missing && \
+    apt-get install -y --no-install-recommends \
     curl \
-    libgl1-mesa-glx \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
-    libxrender-dev \
+    libxrender1 \
     libgomp1 \
-    fonts-noto-cjk \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Create app directory
