@@ -16,8 +16,12 @@ WORKDIR /app
 COPY pyproject.toml poetry.lock ./
 
 ENV PATH="/root/.local/bin:$PATH"
-RUN poetry config virtualenvs.create false && \
-    poetry install --no-interaction --no-root
+
+# Export dependencies to requirements.txt to avoid memory issues with poetry install
+RUN poetry export -f requirements.txt --output requirements.txt --without-hashes
+
+# Install via pip (more memory efficient than poetry install)
+RUN pip install --no-cache-dir -r requirements.txt
 
 FROM $PYTHON_ENV as prod
 
@@ -37,4 +41,3 @@ COPY --from=build /usr/local/bin/uvicorn /usr/local/bin/uvicorn
 RUN python download_models.py
 
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "3000"]
-
