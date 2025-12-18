@@ -1,5 +1,4 @@
 ARG PYTHON_ENV=python:3.10-slim
-ARG POETRY_VERSION=1.6.1
 
 FROM $PYTHON_ENV as build
 # Allow statements and log messages to immediately appear in the logs
@@ -8,7 +7,9 @@ ENV PYTHONUNBUFFERED True
 RUN apt-get update && \
     apt-get install --yes --no-install-recommends curl g++ libopencv-dev && \
     rm -rf /var/lib/apt/lists/*
-RUN curl -sSL https://install.python-poetry.org | POETRY_VERSION=${POETRY_VERSION} python3 -
+
+# Install Poetry 1.6.1 (has export command built-in)
+RUN curl -sSL https://install.python-poetry.org | POETRY_VERSION=1.6.1 python3 -
 
 RUN mkdir -p /app
 WORKDIR /app
@@ -17,11 +18,9 @@ COPY pyproject.toml poetry.lock ./
 
 ENV PATH="/root/.local/bin:$PATH"
 
-# Export dependencies to requirements.txt to avoid memory issues with poetry install
-RUN poetry export -f requirements.txt --output requirements.txt --without-hashes
-
-# Install via pip (more memory efficient than poetry install)
-RUN pip install --no-cache-dir -r requirements.txt
+# Export to requirements.txt then install via pip (more memory efficient)
+RUN poetry export -f requirements.txt --output requirements.txt --without-hashes && \
+    pip install --no-cache-dir -r requirements.txt
 
 FROM $PYTHON_ENV as prod
 
