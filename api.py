@@ -7,6 +7,7 @@ Endpoints:
 import os
 import tempfile
 import time
+import traceback
 from typing import List, Optional, Literal
 
 from fastapi import FastAPI, File, Form, UploadFile, HTTPException
@@ -16,7 +17,7 @@ from pydantic import BaseModel
 app = FastAPI(
     title="MinerU API",
     description="Document parsing API using MinerU/magic-pdf",
-    version="1.2.0"
+    version="1.2.1"
 )
 
 
@@ -35,7 +36,7 @@ async def docs_redirect():
 @app.get("/health")
 async def health():
     """Health check endpoint"""
-    return {"status": "healthy", "version": "1.2.0"}
+    return {"status": "healthy", "version": "1.2.1"}
 
 
 @app.post("/api/parse", response_model=ParseResponse)
@@ -82,6 +83,8 @@ async def api_parse(
             tmp.write(content)
             tmp_path = tmp.name
         
+        print(f"[api_parse] Saved file to {tmp_path}, size: {len(content)} bytes")
+        
         # Create output directory
         with tempfile.TemporaryDirectory() as output_dir:
             # Initialize MinerU components
@@ -89,7 +92,9 @@ async def api_parse(
             writer = FileBasedDataWriter(output_dir)
             
             # Read and process document
+            print(f"[api_parse] Reading PDF bytes...")
             pdf_bytes = reader.read(tmp_path)
+            print(f"[api_parse] Creating dataset...")
             dataset = PymuDocDataset(pdf_bytes)
             
             # Determine OCR setting based on parse_method
@@ -97,20 +102,23 @@ async def api_parse(
             use_ocr = parse_method != "txt"
             
             # Analyze document
-            # Note: doc_analyze does NOT accept a lang parameter
+            print(f"[api_parse] Running doc_analyze with ocr={use_ocr}...")
             model_json = doc_analyze(
                 dataset,
                 ocr=use_ocr,
                 show_log=False
             )
+            print(f"[api_parse] doc_analyze completed")
             
             # Convert to markdown
+            print(f"[api_parse] Applying model to dataset...")
             pipe_result = dataset.apply(
                 model_json,
                 imageWriter=writer
             )
-            
+            print(f"[api_parse] Getting markdown...")
             md_content = pipe_result.get_markdown()
+            print(f"[api_parse] Markdown length: {len(md_content)} chars")
             
             processing_time = int((time.time() - start_time) * 1000)
             
@@ -126,7 +134,9 @@ async def api_parse(
             return ParseResponse(content=md_content, metadata=metadata)
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[api_parse] ERROR: {type(e).__name__}: {str(e)}")
+        print(f"[api_parse] Traceback:\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {str(e)}")
     
     finally:
         # Cleanup temp file
@@ -224,9 +234,10 @@ async def file_parse(files: List[UploadFile] = File(...)):
                 os.unlink(tmp_path)
             
         except Exception as e:
+            print(f"[file_parse] ERROR for {file.filename}: {type(e).__name__}: {str(e)}")
             results.append({
                 "filename": file.filename,
-                "error": str(e)
+                "error": f"{type(e).__name__}: {str(e)}"
             })
             if tmp_path and os.path.exists(tmp_path):
                 os.unlink(tmp_path)
