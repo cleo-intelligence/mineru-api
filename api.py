@@ -1,20 +1,28 @@
 """
 MinerU API - FastAPI wrapper for magic-pdf
-Endpoint: POST /file_parse - Parse PDF to Markdown
+Endpoints:
+  - POST /file_parse - Parse PDF to Markdown (legacy, multi-file)
+  - POST /api/parse - Parse single PDF with OCR support
 """
 import os
 import tempfile
 import time
-from typing import List
+from typing import List, Optional, Literal
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 app = FastAPI(
     title="MinerU API",
     description="Document parsing API using MinerU/magic-pdf",
-    version="1.0.0"
+    version="1.1.0"
 )
+
+
+class ParseResponse(BaseModel):
+    content: str
+    metadata: Optional[dict] = None
 
 
 @app.get("/docs")
@@ -27,13 +35,111 @@ async def docs_redirect():
 @app.get("/health")
 async def health():
     """Health check endpoint"""
-    return {"status": "healthy", "version": "1.0.0"}
+    return {"status": "healthy", "version": "1.1.0"}
+
+
+@app.post("/api/parse", response_model=ParseResponse)
+async def api_parse(
+    file: UploadFile = File(...),
+    parse_method: Literal["auto", "ocr", "txt"] = Form(default="auto"),
+    lang: Optional[str] = Form(default=None),
+):
+    """
+    Parse a single PDF to Markdown with OCR support.
+    
+    Args:
+        file: The PDF file to parse
+        parse_method: Parsing method - 'auto' (detect), 'ocr' (force OCR), 'txt' (text only)
+        lang: Language hint for OCR (e.g., 'fr', 'en')
+    
+    Returns:
+        ParseResponse with markdown content and metadata
+    """
+    try:
+        from magic_pdf.data.data_reader_writer import FileBasedDataWriter, FileBasedDataReader
+        from magic_pdf.data.dataset import PymuDocDataset
+        from magic_pdf.model.doc_analyze_by_custom_model import doc_analyze
+    except ImportError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"MinerU not properly installed: {str(e)}"
+        )
+    
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+    
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ['.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.bmp']:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
+    
+    start_time = time.time()
+    
+    try:
+        # Save uploaded file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
+        
+        # Create output directory
+        with tempfile.TemporaryDirectory() as output_dir:
+            # Initialize MinerU components
+            reader = FileBasedDataReader("")
+            writer = FileBasedDataWriter(output_dir)
+            
+            # Read and process document
+            pdf_bytes = reader.read(tmp_path)
+            dataset = PymuDocDataset(pdf_bytes)
+            
+            # Determine OCR setting based on parse_method
+            use_ocr = True  # Default: auto with OCR enabled
+            if parse_method == "txt":
+                use_ocr = False
+            elif parse_method == "ocr":
+                use_ocr = True  # Force OCR
+            
+            # Analyze document
+            model_json = doc_analyze(
+                dataset,
+                ocr=use_ocr,
+                show_log=False,
+                lang=lang if lang else None
+            )
+            
+            # Convert to markdown
+            pipe_result = dataset.apply(
+                model_json,
+                imageWriter=writer
+            )
+            
+            md_content = pipe_result.get_markdown()
+            
+            processing_time = int((time.time() - start_time) * 1000)
+            
+            # Build metadata
+            metadata = {
+                "parse_method": parse_method,
+                "ocr_applied": use_ocr,
+                "pages": len(dataset),
+                "processing_time_ms": processing_time,
+                "lang": lang,
+            }
+            
+            return ParseResponse(content=md_content, metadata=metadata)
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+    finally:
+        # Cleanup temp file
+        if 'tmp_path' in locals() and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 @app.post("/file_parse")
 async def file_parse(files: List[UploadFile] = File(...)):
     """
-    Parse PDF/image files to Markdown using MinerU.
+    Parse PDF/image files to Markdown using MinerU (legacy multi-file endpoint).
     
     Args:
         files: List of files to parse (PDF or images)
