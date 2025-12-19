@@ -27,6 +27,9 @@ WORKDIR /app
 
 COPY api.py /app/api.py
 
+# Copy MinerU configuration file (required by magic-pdf)
+COPY magic-pdf.json /root/magic-pdf.json
+
 # Expose port (Render uses PORT env var, default 3000)
 EXPOSE 3000
 
