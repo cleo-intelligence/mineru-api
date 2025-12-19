@@ -16,7 +16,7 @@ from pydantic import BaseModel
 app = FastAPI(
     title="MinerU API",
     description="Document parsing API using MinerU/magic-pdf",
-    version="1.1.0"
+    version="1.1.1"
 )
 
 
@@ -35,7 +35,7 @@ async def docs_redirect():
 @app.get("/health")
 async def health():
     """Health check endpoint"""
-    return {"status": "healthy", "version": "1.1.0"}
+    return {"status": "healthy", "version": "1.1.1"}
 
 
 @app.post("/api/parse", response_model=ParseResponse)
@@ -50,7 +50,7 @@ async def api_parse(
     Args:
         file: The PDF file to parse
         parse_method: Parsing method - 'auto' (detect), 'ocr' (force OCR), 'txt' (text only)
-        lang: Language hint for OCR (e.g., 'fr', 'en')
+        lang: Language hint for OCR (e.g., 'fr', 'en') - stored in metadata
     
     Returns:
         ParseResponse with markdown content and metadata
@@ -73,6 +73,7 @@ async def api_parse(
         raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
     
     start_time = time.time()
+    tmp_path = None
     
     try:
         # Save uploaded file temporarily
@@ -92,18 +93,14 @@ async def api_parse(
             dataset = PymuDocDataset(pdf_bytes)
             
             # Determine OCR setting based on parse_method
-            use_ocr = True  # Default: auto with OCR enabled
-            if parse_method == "txt":
-                use_ocr = False
-            elif parse_method == "ocr":
-                use_ocr = True  # Force OCR
+            # For scanned PDFs, we always want OCR enabled
+            use_ocr = True if parse_method in ["auto", "ocr"] else False
             
-            # Analyze document
+            # Analyze document (doc_analyze doesn't accept lang parameter)
             model_json = doc_analyze(
                 dataset,
                 ocr=use_ocr,
-                show_log=False,
-                lang=lang if lang else None
+                show_log=False
             )
             
             # Convert to markdown
@@ -122,7 +119,7 @@ async def api_parse(
                 "ocr_applied": use_ocr,
                 "pages": len(dataset),
                 "processing_time_ms": processing_time,
-                "lang": lang,
+                "lang": lang,  # Store for reference even if not used by parser
             }
             
             return ParseResponse(content=md_content, metadata=metadata)
@@ -132,7 +129,7 @@ async def api_parse(
     
     finally:
         # Cleanup temp file
-        if 'tmp_path' in locals() and os.path.exists(tmp_path):
+        if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
 
 
@@ -161,6 +158,7 @@ async def file_parse(files: List[UploadFile] = File(...)):
     
     for file in files:
         start_time = time.time()
+        tmp_path = None
         
         # Validate file type
         if not file.filename:
@@ -221,13 +219,17 @@ async def file_parse(files: List[UploadFile] = File(...)):
                 })
             
             # Cleanup temp file
-            os.unlink(tmp_path)
+            if tmp_path:
+                os.unlink(tmp_path)
             
         except Exception as e:
             results.append({
                 "filename": file.filename,
                 "error": str(e)
             })
+            # Cleanup on error
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
     
     return JSONResponse(content=results)
 
