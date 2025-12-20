@@ -3,18 +3,18 @@
     "temp-output-dir":"/tmp",
     "models-dir":"/root/PDF-Extract-Kit/models",
     "layoutreader-model-dir":"/root/layoutreader",
-    "device-mode":"cpu",
+    "device-mode":"cuda",
     "layout-config": {
         "model": "layoutlmv3"
     },
     "formula-config": {
         "mfd_model": "yolo_v8_mfd",
         "mfr_model": "unimernet_small",
-        "enable": false
+        "enable": true
     },
     "table-config": {
         "model": "rapid_table",
-        "enable": false,
+        "enable": true,
         "max_time": 400
     },
     "config_version": "1.0.0"
