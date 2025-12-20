@@ -287,12 +287,13 @@ def download_models():
 def create_config():
     """Create magic-pdf.json config pointing to persistent models."""
     config_path = "/root/magic-pdf.json"
+    # All features enabled for maximum quality
     config_content = f'''{{
     "device-mode": "cpu",
     "models-dir": "{MODELS_DIR}",
     "table-config": {{
         "model": "rapid_table",
-        "enable": false
+        "enable": true
     }},
     "formula-config": {{
         "model": "unimernet_small",
