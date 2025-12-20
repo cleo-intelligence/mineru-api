@@ -10,6 +10,7 @@ Usage:
 """
 import os
 import sys
+import json
 import shutil
 
 # Model storage location (Render persistent disk mounted at /root/.cache)
@@ -24,6 +25,31 @@ os.environ["HF_HUB_CACHE"] = "/root/.cache/huggingface/hub"
 HF_REPO_PDF_KIT = "opendatalab/PDF-Extract-Kit"
 # UniMERNet (MFR) from official repo - has complete weights
 HF_REPO_UNIMERNET_SMALL = "wanderkid/unimernet_small"
+
+# Config file path
+CONFIG_PATH = "/root/magic-pdf.json"
+
+
+def is_formula_enabled() -> bool:
+    """Check if formula recognition is enabled in config."""
+    # Check local config in repo first
+    repo_config = os.path.join(os.path.dirname(__file__), "magic-pdf.json")
+    config_paths = [repo_config, CONFIG_PATH]
+    
+    for path in config_paths:
+        if os.path.exists(path):
+            try:
+                with open(path, 'r') as f:
+                    config = json.load(f)
+                enabled = config.get("formula-config", {}).get("enable", True)
+                print(f"[Models] Formula recognition enabled: {enabled} (from {path})")
+                return enabled
+            except Exception as e:
+                print(f"[Models] Could not read config {path}: {e}")
+    
+    # Default to True if no config found
+    print("[Models] No config found, assuming formula recognition enabled")
+    return True
 
 
 def check_models_exist() -> bool:
@@ -326,8 +352,11 @@ def create_directory_structure():
                     os.makedirs(mfd_yolo, exist_ok=True)
                     shutil.move(src, dst)
     
-    # Create MFR symlinks
-    create_mfr_symlinks()
+    # Create MFR symlinks only if formula is enabled
+    if is_formula_enabled():
+        create_mfr_symlinks()
+    else:
+        print("[Models] Formula recognition disabled, skipping MFR symlinks")
 
 
 def download_models():
@@ -407,27 +436,30 @@ def download_models():
 
 def create_config():
     """Create magic-pdf.json config pointing to persistent models."""
-    config_path = "/root/magic-pdf.json"
+    # Read formula enabled state from repo config
+    formula_enabled = is_formula_enabled()
+    
     config_content = f'''{{
     "device-mode": "cpu",
     "models-dir": "{MODELS_DIR}",
     "table-config": {{
         "model": "rapid_table",
-        "enable": true
+        "enable": false
     }},
     "formula-config": {{
         "model": "unimernet_small",
-        "enable": true
+        "enable": {"true" if formula_enabled else "false"}
     }},
     "layout-config": {{
         "model": "layoutlmv3"
     }}
 }}'''
     
-    with open(config_path, 'w') as f:
+    with open(CONFIG_PATH, 'w') as f:
         f.write(config_content)
     
-    print(f"[Models] Config written to {config_path}")
+    print(f"[Models] Config written to {CONFIG_PATH}")
+    print(f"[Models] Formula recognition: {'enabled' if formula_enabled else 'DISABLED (saves ~1GB RAM)'}")
 
 
 def show_disk_usage():
@@ -448,15 +480,22 @@ def main():
     print(f"[Models] Models directory: {MODELS_DIR}")
     print(f"[Models] Force download: {force}")
     
+    # Check formula config
+    formula_enabled = is_formula_enabled()
+    print(f"[Models] Formula recognition: {'ENABLED' if formula_enabled else 'DISABLED'}")
+    
     show_disk_usage()
     
     # Check if we need to download UniMERNet with complete weights
     need_unimernet = False
-    if os.path.exists(MODELS_DIR) and os.listdir(MODELS_DIR):
-        create_directory_structure()
-        if not check_unimernet_complete():
-            print("[Models] UniMERNet weights incomplete - need to download from official repo")
-            need_unimernet = True
+    if formula_enabled:
+        if os.path.exists(MODELS_DIR) and os.listdir(MODELS_DIR):
+            create_directory_structure()
+            if not check_unimernet_complete():
+                print("[Models] UniMERNet weights incomplete - need to download from official repo")
+                need_unimernet = True
+    else:
+        print("[Models] Skipping UniMERNet check (formula recognition disabled)")
     
     # Download base models if needed
     if force or not check_models_exist():
@@ -472,17 +511,19 @@ def main():
                     print("[Models] WARNING: Download failed.")
                     show_disk_usage()
                     sys.exit(1)
-                need_unimernet = True
+                if formula_enabled:
+                    need_unimernet = True
         else:
             success = download_models()
             if not success:
                 print("[Models] WARNING: Download failed.")
                 show_disk_usage()
                 sys.exit(1)
-            need_unimernet = True
+            if formula_enabled:
+                need_unimernet = True
     
-    # Download complete UniMERNet weights if needed
-    if need_unimernet or not check_unimernet_complete():
+    # Download complete UniMERNet weights if needed AND formula is enabled
+    if formula_enabled and (need_unimernet or not check_unimernet_complete()):
         print("[Models] ----------------------------------------")
         print("[Models] Downloading complete UniMERNet weights...")
         print("[Models] ----------------------------------------")
@@ -492,6 +533,11 @@ def main():
             create_mfr_symlinks()
         else:
             print("[Models] WARNING: UniMERNet download failed. Formula recognition may not work.")
+    elif not formula_enabled:
+        print("[Models] ----------------------------------------")
+        print("[Models] Skipping UniMERNet download (formula recognition disabled)")
+        print("[Models] This saves ~773MB download and ~1GB RAM at runtime")
+        print("[Models] ----------------------------------------")
     
     create_config()
     show_disk_usage()
