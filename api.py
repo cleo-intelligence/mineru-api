@@ -18,7 +18,7 @@ from pydantic import BaseModel
 app = FastAPI(
     title="MinerU API",
     description="Document parsing API using MinerU/magic-pdf with Tesseract fallback",
-    version="1.3.0"
+    version="1.3.1"
 )
 
 
@@ -37,7 +37,7 @@ async def docs_redirect():
 @app.get("/health")
 async def health():
     """Health check endpoint"""
-    return {"status": "healthy", "version": "1.3.0"}
+    return {"status": "healthy", "version": "1.3.1"}
 
 
 def tesseract_ocr_fallback(pdf_path: str, lang: Optional[str] = None) -> tuple[str, dict]:
@@ -58,31 +58,50 @@ def tesseract_ocr_fallback(pdf_path: str, lang: Optional[str] = None) -> tuple[s
     with tempfile.TemporaryDirectory() as tmp_dir:
         # Convert PDF to images using pdftoppm (from poppler-utils)
         print(f"[tesseract_fallback] Converting PDF to images...")
+        print(f"[tesseract_fallback] PDF path: {pdf_path}, size: {os.path.getsize(pdf_path)} bytes")
         image_prefix = os.path.join(tmp_dir, "page")
         
         try:
-            subprocess.run(
+            result = subprocess.run(
                 ["pdftoppm", "-png", "-r", "300", pdf_path, image_prefix],
-                check=True,
                 capture_output=True,
                 timeout=120
             )
-        except subprocess.CalledProcessError as e:
-            raise Exception(f"PDF to image conversion failed: {e.stderr.decode()}")
+            print(f"[tesseract_fallback] pdftoppm stdout: {result.stdout.decode()[:500]}")
+            print(f"[tesseract_fallback] pdftoppm stderr: {result.stderr.decode()[:500]}")
+            if result.returncode != 0:
+                raise Exception(f"pdftoppm failed with code {result.returncode}: {result.stderr.decode()}")
         except subprocess.TimeoutExpired:
             raise Exception("PDF to image conversion timed out")
         
         # Find generated images
+        all_files = os.listdir(tmp_dir)
+        print(f"[tesseract_fallback] Files in tmp_dir: {all_files}")
+        
         images = sorted([
             os.path.join(tmp_dir, f) 
-            for f in os.listdir(tmp_dir) 
+            for f in all_files 
             if f.startswith("page") and f.endswith(".png")
         ])
         
         if not images:
-            raise Exception("No images generated from PDF")
+            # Try without prefix filter
+            images = sorted([
+                os.path.join(tmp_dir, f) 
+                for f in all_files 
+                if f.endswith(".png")
+            ])
+            print(f"[tesseract_fallback] Found {len(images)} PNG files without prefix filter")
         
-        print(f"[tesseract_fallback] Generated {len(images)} page images, running OCR...")
+        if not images:
+            raise Exception(f"No images generated from PDF. Files in dir: {all_files}")
+        
+        # Log image sizes
+        for img in images:
+            img_size = os.path.getsize(img)
+            print(f"[tesseract_fallback] Image: {os.path.basename(img)}, size: {img_size} bytes")
+        
+        print(f"[tesseract_fallback] Generated {len(images)} page images, running OCR with lang={tesseract_lang}...")
         
         # Run Tesseract on each image
         all_text = []
@@ -92,12 +111,22 @@ def tesseract_ocr_fallback(pdf_path: str, lang: Optional[str] = None) -> tuple[s
                     ["tesseract", image_path, "stdout", "-l", tesseract_lang],
                     capture_output=True,
                     text=True,
-                    timeout=60
+                    timeout=120
                 )
                 page_text = result.stdout.strip()
+                stderr = result.stderr.strip()
+                
+                print(f"[tesseract_fallback] Page {i + 1}: {len(page_text)} chars, returncode={result.returncode}")
+                if stderr:
+                    print(f"[tesseract_fallback] Page {i + 1} stderr: {stderr[:300]}")
+                if not page_text and result.returncode == 0:
+                    print(f"[tesseract_fallback] Page {i + 1}: Empty output but success - image may be blank or unreadable")
+                
                 if page_text:
                     all_text.append(f"## Page {i + 1}\n\n{page_text}")
-                print(f"[tesseract_fallback] Page {i + 1}: {len(page_text)} chars")
+                else:
+                    all_text.append(f"## Page {i + 1}\n\n[Page vide ou illisible]")
+                    
             except subprocess.TimeoutExpired:
                 print(f"[tesseract_fallback] Page {i + 1} OCR timed out")
                 all_text.append(f"## Page {i + 1}\n\n[OCR timeout]")
