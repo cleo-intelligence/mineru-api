@@ -81,6 +81,13 @@ echo "[Startup] Final disk usage:"
 df -h /root/.cache 2>/dev/null || true
 du -sh /root/.cache/* 2>/dev/null || true
 
-# Start the API
-echo "[Startup] Starting uvicorn on port $PORT..."
-exec uvicorn api:app --host 0.0.0.0 --port "$PORT"
+# Start the API with increased timeout for large documents
+# - timeout: 600s (10 minutes) for processing 50+ page documents on CPU
+# - workers: 2 to utilize both CPUs
+# - keep-alive: 120s for long-running connections
+echo "[Startup] Starting uvicorn on port $PORT with 600s timeout..."
+exec uvicorn api:app \
+    --host 0.0.0.0 \
+    --port "$PORT" \
+    --timeout-keep-alive 120 \
+    --workers 2
