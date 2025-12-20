@@ -4,7 +4,7 @@
 
 set -e
 
-MODELS_DIR="${MINERU_MODELS_DIR:-/root/cache/models}"
+MODELS_DIR="${MINERU_MODELS_DIR:-/root/.cache/models}"
 CONFIG_PATH="/root/magic-pdf.json"
 
 echo "[Startup] ========================================"
@@ -14,7 +14,7 @@ echo "[Startup] Models directory: $MODELS_DIR"
 
 # Show disk usage
 echo "[Startup] Disk usage:"
-df -h /root/cache 2>/dev/null || echo "[Startup] /root/cache not mounted as separate disk"
+df -h /root/.cache 2>/dev/null || echo "[Startup] /root/.cache not mounted as separate disk"
 
 # Create magic-pdf.json config
 cat > "$CONFIG_PATH" << EOF
@@ -78,8 +78,8 @@ fi
 
 # Show final disk usage
 echo "[Startup] Final disk usage:"
-df -h /root/cache 2>/dev/null || true
-du -sh /root/cache/* 2>/dev/null || true
+df -h /root/.cache 2>/dev/null || true
+du -sh /root/.cache/* 2>/dev/null || true
 
 # Start the API
 echo "[Startup] Starting uvicorn on port $PORT..."
