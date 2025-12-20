@@ -51,18 +51,48 @@ def check_models_exist() -> bool:
     return all_found
 
 
+def fix_mfr_model_files(model_dir: str):
+    """
+    Fix MFR model files to be compatible with transformers.
+    transformers expects pytorch_model.bin but the repo has pytorch_model.pth
+    """
+    pth_file = os.path.join(model_dir, "pytorch_model.pth")
+    bin_file = os.path.join(model_dir, "pytorch_model.bin")
+    
+    if os.path.exists(pth_file) and not os.path.exists(bin_file):
+        # Create symlink from .bin to .pth
+        print(f"[Models]   Creating symlink pytorch_model.bin -> pytorch_model.pth in {os.path.basename(model_dir)}")
+        try:
+            os.symlink("pytorch_model.pth", bin_file)
+        except Exception as e:
+            print(f"[Models]   Failed to create symlink: {e}")
+            # Try copying instead
+            try:
+                shutil.copy2(pth_file, bin_file)
+                print(f"[Models]   Copied pytorch_model.pth to pytorch_model.bin")
+            except Exception as e2:
+                print(f"[Models]   Failed to copy: {e2}")
+
+
 def create_mfr_symlinks():
     """
     Create symlinks for MFR (Math Formula Recognition) models.
     magic-pdf expects specific model names like 'unimernet_hf_small_2503'
     but the HuggingFace repo has different names like 'unimernet_small'.
+    Also fix .pth -> .bin file naming.
     """
     mfr_dir = os.path.join(MODELS_DIR, "MFR")
     if not os.path.exists(mfr_dir):
         print(f"[Models] MFR directory not found, skipping symlinks")
         return
     
-    print(f"[Models] Creating MFR model symlinks...")
+    print(f"[Models] Creating MFR model symlinks and fixing file names...")
+    
+    # First, fix .pth -> .bin in existing model directories
+    for model_name in ["unimernet_small", "unimernet_base", "unimernet_tiny"]:
+        model_path = os.path.join(mfr_dir, model_name)
+        if os.path.exists(model_path) and os.path.isdir(model_path):
+            fix_mfr_model_files(model_path)
     
     # Mapping from expected names to actual names
     symlink_map = {
@@ -80,7 +110,7 @@ def create_mfr_symlinks():
             print(f"[Models]   Target {target_name} not found, skipping")
             continue
         
-        # Remove existing symlink or directory if it exists
+        # Remove existing symlink if it exists
         if os.path.islink(link_path):
             os.remove(link_path)
             print(f"[Models]   Removed existing symlink {link_name}")
@@ -88,12 +118,22 @@ def create_mfr_symlinks():
             print(f"[Models]   {link_name} already exists as directory, skipping")
             continue
         
-        # Create symlink
+        # Create symlink using absolute path for reliability
         try:
-            os.symlink(target_name, link_path)
+            os.symlink(target_path, link_path)
             print(f"[Models]   Created symlink {link_name} -> {target_name}")
         except Exception as e:
             print(f"[Models]   Failed to create symlink {link_name}: {e}")
+    
+    # Verify the symlink works
+    test_path = os.path.join(mfr_dir, "unimernet_hf_small_2503")
+    if os.path.exists(test_path):
+        print(f"[Models]   Verifying symlink - contents of unimernet_hf_small_2503:")
+        try:
+            for f in os.listdir(test_path)[:5]:
+                print(f"[Models]     {f}")
+        except Exception as e:
+            print(f"[Models]     Error listing: {e}")
 
 
 def create_directory_structure():
@@ -110,6 +150,8 @@ def create_directory_structure():
     print(f"[Models] Current structure of {MODELS_DIR}:")
     for root, dirs, files in os.walk(MODELS_DIR):
         level = root.replace(MODELS_DIR, '').count(os.sep)
+        if level > 2:  # Limit depth
+            continue
         indent = '  ' * level
         folder = os.path.basename(root) or MODELS_DIR
         print(f"{indent}{folder}/")
@@ -119,8 +161,11 @@ def create_directory_structure():
                 target = os.readlink(fpath)
                 print(f"{indent}  {f} -> {target}")
             else:
-                size = os.path.getsize(fpath)
-                print(f"{indent}  {f} ({size / 1024 / 1024:.1f} MB)")
+                try:
+                    size = os.path.getsize(fpath)
+                    print(f"{indent}  {f} ({size / 1024 / 1024:.1f} MB)")
+                except:
+                    print(f"{indent}  {f}")
         if len(files) > 5:
             print(f"{indent}  ... and {len(files) - 5} more files")
     
