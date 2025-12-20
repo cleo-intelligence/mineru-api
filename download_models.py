@@ -3,29 +3,30 @@
 Download MinerU models from Hugging Face to persistent storage.
 Uses huggingface_hub for reliable incremental downloads.
 
+IMPORTANT: Downloads directly to /root/cache/models (persistent disk).
+
 Usage:
     python download_models.py [--force]
 """
 import os
 import sys
+import shutil
 
 # Model storage location (Render persistent disk mounted at /root/cache)
 MODELS_DIR = os.environ.get("MINERU_MODELS_DIR", "/root/cache/models")
 
+# Set HF cache to persistent disk to avoid filling /tmp
+os.environ["HF_HOME"] = "/root/cache/huggingface"
+os.environ["HF_HUB_CACHE"] = "/root/cache/huggingface/hub"
+
 # Hugging Face model repository
 HF_REPO = "wanderkid/PDF-Extract-Kit"
-
-# Only download essential models for CPU mode (skip GPU-only models)
-ESSENTIAL_SUBDIRS = [
-    "Layout/LayoutLMv3",
-    "MFD/YOLO",
-    "OCR",
-]
 
 
 def check_models_exist() -> bool:
     """Check if essential models are already downloaded."""
     if not os.path.exists(MODELS_DIR):
+        print(f"[Models] Directory does not exist: {MODELS_DIR}")
         return False
     
     # Check for key model files
@@ -39,78 +40,102 @@ def check_models_exist() -> bool:
         if not os.path.exists(full_path):
             print(f"[Models] Missing: {key_file}")
             return False
+        else:
+            size = os.path.getsize(full_path)
+            print(f"[Models] Found: {key_file} ({size / 1024 / 1024:.1f} MB)")
     
     print(f"[Models] Essential models found in {MODELS_DIR}")
     return True
 
 
 def download_models():
-    """Download models using huggingface_hub (more reliable than git clone)."""
+    """Download models using huggingface_hub directly to persistent disk."""
     try:
-        from huggingface_hub import snapshot_download, hf_hub_download
+        from huggingface_hub import snapshot_download
     except ImportError:
         print("[Models] Installing huggingface_hub...")
         import subprocess
         subprocess.run([sys.executable, "-m", "pip", "install", "huggingface_hub"], check=True)
-        from huggingface_hub import snapshot_download, hf_hub_download
+        from huggingface_hub import snapshot_download
     
-    print(f"[Models] Downloading models to {MODELS_DIR}...")
+    print(f"[Models] Target directory: {MODELS_DIR}")
+    print(f"[Models] HF_HOME: {os.environ.get('HF_HOME')}")
+    
+    # Ensure directories exist
     os.makedirs(MODELS_DIR, exist_ok=True)
+    os.makedirs(os.environ["HF_HOME"], exist_ok=True)
     
-    # Download only the models subdirectory
     try:
         print(f"[Models] Downloading from {HF_REPO}...")
+        print(f"[Models] This will take a while (~10GB)...")
         
-        # Use snapshot_download with allow_patterns to get only models/
+        # Download to a temp location first, then move
+        temp_download_dir = "/root/cache/hf_download_temp"
+        os.makedirs(temp_download_dir, exist_ok=True)
+        
+        # Download the entire repo
         local_dir = snapshot_download(
             repo_id=HF_REPO,
-            local_dir=MODELS_DIR,
+            local_dir=temp_download_dir,
             local_dir_use_symlinks=False,
-            allow_patterns=["models/**"],
-            ignore_patterns=["*.md", "*.txt", "*.json", ".git*"],
+            cache_dir=os.environ["HF_HUB_CACHE"],
         )
         
-        # The files are downloaded to MODELS_DIR/models/, move them up
-        downloaded_models = os.path.join(MODELS_DIR, "models")
-        if os.path.exists(downloaded_models):
-            import shutil
-            for item in os.listdir(downloaded_models):
-                src = os.path.join(downloaded_models, item)
-                dst = os.path.join(MODELS_DIR, item)
-                if os.path.exists(dst):
-                    shutil.rmtree(dst)
-                shutil.move(src, dst)
-            os.rmdir(downloaded_models)
+        print(f"[Models] Downloaded to: {local_dir}")
         
-        print(f"[Models] Download complete!")
+        # List what was downloaded
+        print(f"[Models] Contents of download dir:")
+        for item in os.listdir(local_dir):
+            item_path = os.path.join(local_dir, item)
+            if os.path.isdir(item_path):
+                print(f"  [DIR] {item}/")
+            else:
+                size = os.path.getsize(item_path)
+                print(f"  [FILE] {item} ({size / 1024 / 1024:.1f} MB)")
+        
+        # Move models directory to final location
+        src_models = os.path.join(local_dir, "models")
+        if os.path.exists(src_models):
+            print(f"[Models] Moving models from {src_models} to {MODELS_DIR}")
+            
+            # Remove existing if any
+            if os.path.exists(MODELS_DIR):
+                shutil.rmtree(MODELS_DIR)
+            
+            # Move models
+            shutil.move(src_models, MODELS_DIR)
+            print(f"[Models] Models moved successfully!")
+            
+            # List final contents
+            print(f"[Models] Final contents of {MODELS_DIR}:")
+            for item in os.listdir(MODELS_DIR):
+                print(f"  {item}/")
+        else:
+            # Models might be at root level
+            print(f"[Models] No 'models' subdir found, checking root level...")
+            
+            # Check if model files are at root
+            for item in ["Layout", "MFD", "OCR", "MFR", "TabRec"]:
+                src = os.path.join(local_dir, item)
+                if os.path.exists(src):
+                    dst = os.path.join(MODELS_DIR, item)
+                    print(f"[Models] Moving {item} to {dst}")
+                    if os.path.exists(dst):
+                        shutil.rmtree(dst)
+                    shutil.move(src, dst)
+        
+        # Cleanup temp download dir
+        if os.path.exists(temp_download_dir):
+            shutil.rmtree(temp_download_dir)
+        
+        print("[Models] Download complete!")
         return True
         
     except Exception as e:
         print(f"[Models] Download error: {e}")
-        print("[Models] Trying alternative download method...")
-        
-        # Fallback: download individual essential files
-        try:
-            essential_files = [
-                "models/Layout/LayoutLMv3/model_final.pth",
-                "models/Layout/LayoutLMv3/config.json",
-                "models/MFD/YOLO/yolo_v8_ft.pt",
-            ]
-            
-            for file_path in essential_files:
-                print(f"[Models] Downloading {file_path}...")
-                local_path = hf_hub_download(
-                    repo_id=HF_REPO,
-                    filename=file_path,
-                    local_dir=MODELS_DIR,
-                    local_dir_use_symlinks=False,
-                )
-                print(f"[Models] Downloaded to {local_path}")
-            
-            return True
-        except Exception as e2:
-            print(f"[Models] Fallback download also failed: {e2}")
-            return False
+        import traceback
+        traceback.print_exc()
+        return False
 
 
 def create_config():
@@ -138,19 +163,35 @@ def create_config():
     print(f"[Models] Config written to {config_path}")
 
 
+def show_disk_usage():
+    """Show disk usage for debugging."""
+    import subprocess
+    print("\n[Models] Disk usage:")
+    subprocess.run(["df", "-h", "/root/cache"], check=False)
+    print("\n[Models] Directory sizes in /root/cache:")
+    subprocess.run(["du", "-sh", "/root/cache/*"], shell=True, check=False)
+
+
 def main():
     force = "--force" in sys.argv
     
+    print(f"[Models] ========================================")
+    print(f"[Models] MinerU Model Downloader")
+    print(f"[Models] ========================================")
     print(f"[Models] Models directory: {MODELS_DIR}")
     print(f"[Models] Force download: {force}")
+    
+    show_disk_usage()
     
     if force or not check_models_exist():
         success = download_models()
         if not success:
             print("[Models] WARNING: Download failed. Tesseract fallback will be used.")
+            show_disk_usage()
             sys.exit(1)
     
     create_config()
+    show_disk_usage()
     print("[Models] Ready!")
 
 
