@@ -23,7 +23,7 @@ cat > "$CONFIG_PATH" << EOF
     "models-dir": "$MODELS_DIR",
     "table-config": {
         "model": "rapid_table",
-        "enable": false
+        "enable": true
     },
     "formula-config": {
         "model": "unimernet_small",
