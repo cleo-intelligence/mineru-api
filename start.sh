@@ -17,6 +17,8 @@ echo "[Startup] Disk usage:"
 df -h /root/.cache 2>/dev/null || echo "[Startup] /root/.cache not mounted as separate disk"
 
 # Create magic-pdf.json config
+# Note: formula-config.enable is false because the model names in the HF repo
+# don't match what magic-pdf expects (unimernet_hf_small_2503 vs unimernet_small)
 cat > "$CONFIG_PATH" << EOF
 {
     "device-mode": "cpu",
@@ -27,7 +29,7 @@ cat > "$CONFIG_PATH" << EOF
     },
     "formula-config": {
         "model": "unimernet_small",
-        "enable": true
+        "enable": false
     },
     "layout-config": {
         "model": "layoutlmv3"
@@ -36,6 +38,7 @@ cat > "$CONFIG_PATH" << EOF
 EOF
 
 echo "[Startup] Config written to $CONFIG_PATH"
+cat "$CONFIG_PATH"
 
 # Check if models exist by looking for Layout directory (most reliable indicator)
 # Different model repos may have different structures, so check for common patterns
