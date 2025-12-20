@@ -54,19 +54,23 @@ def check_models_exist() -> bool:
 def fix_mfr_model_files(model_dir: str):
     """
     Fix MFR model files to be compatible with transformers.
-    transformers expects pytorch_model.bin but the repo has pytorch_model.pth
+    transformers expects pytorch_model.bin but the repo may have pytorch_model.pth
     """
     pth_file = os.path.join(model_dir, "pytorch_model.pth")
     bin_file = os.path.join(model_dir, "pytorch_model.bin")
     
-    if os.path.exists(pth_file) and not os.path.exists(bin_file):
-        # Create symlink from .bin to .pth
+    # Check if .bin already exists
+    if os.path.exists(bin_file):
+        print(f"[Models]   pytorch_model.bin already exists in {os.path.basename(model_dir)}")
+        return
+    
+    # If .pth exists, create symlink to .bin
+    if os.path.exists(pth_file):
         print(f"[Models]   Creating symlink pytorch_model.bin -> pytorch_model.pth in {os.path.basename(model_dir)}")
         try:
             os.symlink("pytorch_model.pth", bin_file)
         except Exception as e:
             print(f"[Models]   Failed to create symlink: {e}")
-            # Try copying instead
             try:
                 shutil.copy2(pth_file, bin_file)
                 print(f"[Models]   Copied pytorch_model.pth to pytorch_model.bin")
@@ -77,24 +81,67 @@ def fix_mfr_model_files(model_dir: str):
 def create_mfr_symlinks():
     """
     Create symlinks for MFR (Math Formula Recognition) models.
-    magic-pdf expects specific model names like 'unimernet_hf_small_2503'
-    but the HuggingFace repo has different names like 'unimernet_small'.
-    Also fix .pth -> .bin file naming.
+    
+    The HuggingFace repo opendatalab/PDF-Extract-Kit has:
+    - MFR/UniMERNet/ (single model directory)
+    
+    But magic-pdf expects:
+    - MFR/unimernet_small/ or MFR/unimernet_hf_small_2503/
+    
+    We need to create symlinks to map the names correctly.
     """
     mfr_dir = os.path.join(MODELS_DIR, "MFR")
     if not os.path.exists(mfr_dir):
         print(f"[Models] MFR directory not found, skipping symlinks")
         return
     
-    print(f"[Models] Creating MFR model symlinks and fixing file names...")
+    print(f"[Models] Creating MFR model symlinks...")
+    print(f"[Models] MFR directory contents:")
+    for item in os.listdir(mfr_dir):
+        item_path = os.path.join(mfr_dir, item)
+        if os.path.islink(item_path):
+            target = os.readlink(item_path)
+            print(f"[Models]   {item} -> {target} (symlink)")
+        elif os.path.isdir(item_path):
+            print(f"[Models]   {item}/ (directory)")
+        else:
+            print(f"[Models]   {item} (file)")
     
-    # First, fix .pth -> .bin in existing model directories
-    for model_name in ["unimernet_small", "unimernet_base", "unimernet_tiny"]:
+    # Step 1: Map UniMERNet -> unimernet_small if UniMERNet exists
+    # The HuggingFace repo has MFR/UniMERNet/ but magic-pdf expects MFR/unimernet_small/
+    unimernet_dir = os.path.join(mfr_dir, "UniMERNet")
+    unimernet_small = os.path.join(mfr_dir, "unimernet_small")
+    
+    if os.path.exists(unimernet_dir) and os.path.isdir(unimernet_dir) and not os.path.islink(unimernet_dir):
+        if not os.path.exists(unimernet_small):
+            print(f"[Models]   Creating symlink unimernet_small -> UniMERNet")
+            try:
+                os.symlink(unimernet_dir, unimernet_small)
+            except Exception as e:
+                print(f"[Models]   Failed to create symlink: {e}")
+        else:
+            print(f"[Models]   unimernet_small already exists")
+    
+    # Step 2: Fix .pth -> .bin in existing model directories
+    # Check all possible model directory names
+    model_dirs_to_check = [
+        "UniMERNet",
+        "unimernet_small", 
+        "unimernet_base", 
+        "unimernet_tiny",
+        "unimernet_small_2501",
+    ]
+    
+    for model_name in model_dirs_to_check:
         model_path = os.path.join(mfr_dir, model_name)
-        if os.path.exists(model_path) and os.path.isdir(model_path):
-            fix_mfr_model_files(model_path)
+        # Follow symlinks to get actual directory
+        if os.path.exists(model_path):
+            real_path = os.path.realpath(model_path)
+            if os.path.isdir(real_path):
+                fix_mfr_model_files(real_path)
     
-    # Mapping from expected names to actual names
+    # Step 3: Create symlinks from expected names to actual names
+    # magic-pdf may look for unimernet_hf_small_2503
     symlink_map = {
         "unimernet_hf_small_2503": "unimernet_small",
         "unimernet_hf_base_2503": "unimernet_base", 
@@ -105,9 +152,9 @@ def create_mfr_symlinks():
         link_path = os.path.join(mfr_dir, link_name)
         target_path = os.path.join(mfr_dir, target_name)
         
-        # Check if target exists
+        # Check if target exists (could be a directory or symlink)
         if not os.path.exists(target_path):
-            print(f"[Models]   Target {target_name} not found, skipping")
+            print(f"[Models]   Target {target_name} not found, skipping {link_name}")
             continue
         
         # Remove existing symlink if it exists
@@ -120,20 +167,31 @@ def create_mfr_symlinks():
         
         # Create symlink using absolute path for reliability
         try:
-            os.symlink(target_path, link_path)
+            abs_target = os.path.realpath(target_path)
+            os.symlink(abs_target, link_path)
             print(f"[Models]   Created symlink {link_name} -> {target_name}")
         except Exception as e:
             print(f"[Models]   Failed to create symlink {link_name}: {e}")
     
-    # Verify the symlink works
+    # Verify the symlinks work
+    print(f"[Models] Verifying MFR symlinks...")
     test_path = os.path.join(mfr_dir, "unimernet_hf_small_2503")
     if os.path.exists(test_path):
-        print(f"[Models]   Verifying symlink - contents of unimernet_hf_small_2503:")
+        print(f"[Models]   unimernet_hf_small_2503 exists:")
         try:
-            for f in os.listdir(test_path)[:5]:
-                print(f"[Models]     {f}")
+            real_path = os.path.realpath(test_path)
+            print(f"[Models]     -> resolves to: {real_path}")
+            for f in os.listdir(test_path)[:8]:
+                fpath = os.path.join(test_path, f)
+                if os.path.isfile(fpath):
+                    size = os.path.getsize(fpath)
+                    print(f"[Models]     {f} ({size / 1024 / 1024:.1f} MB)")
+                else:
+                    print(f"[Models]     {f}/")
         except Exception as e:
-            print(f"[Models]     Error listing: {e}")
+            print(f"[Models]     Error: {e}")
+    else:
+        print(f"[Models]   WARNING: unimernet_hf_small_2503 not found!")
 
 
 def create_directory_structure():
