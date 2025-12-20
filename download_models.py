@@ -51,6 +51,51 @@ def check_models_exist() -> bool:
     return all_found
 
 
+def create_mfr_symlinks():
+    """
+    Create symlinks for MFR (Math Formula Recognition) models.
+    magic-pdf expects specific model names like 'unimernet_hf_small_2503'
+    but the HuggingFace repo has different names like 'unimernet_small'.
+    """
+    mfr_dir = os.path.join(MODELS_DIR, "MFR")
+    if not os.path.exists(mfr_dir):
+        print(f"[Models] MFR directory not found, skipping symlinks")
+        return
+    
+    print(f"[Models] Creating MFR model symlinks...")
+    
+    # Mapping from expected names to actual names
+    symlink_map = {
+        "unimernet_hf_small_2503": "unimernet_small",
+        "unimernet_hf_base_2503": "unimernet_base", 
+        "unimernet_hf_tiny_2503": "unimernet_tiny",
+    }
+    
+    for link_name, target_name in symlink_map.items():
+        link_path = os.path.join(mfr_dir, link_name)
+        target_path = os.path.join(mfr_dir, target_name)
+        
+        # Check if target exists
+        if not os.path.exists(target_path):
+            print(f"[Models]   Target {target_name} not found, skipping")
+            continue
+        
+        # Remove existing symlink or directory if it exists
+        if os.path.islink(link_path):
+            os.remove(link_path)
+            print(f"[Models]   Removed existing symlink {link_name}")
+        elif os.path.exists(link_path):
+            print(f"[Models]   {link_name} already exists as directory, skipping")
+            continue
+        
+        # Create symlink
+        try:
+            os.symlink(target_name, link_path)
+            print(f"[Models]   Created symlink {link_name} -> {target_name}")
+        except Exception as e:
+            print(f"[Models]   Failed to create symlink {link_name}: {e}")
+
+
 def create_directory_structure():
     """
     Create the directory structure expected by MinerU magic-pdf.
@@ -69,8 +114,13 @@ def create_directory_structure():
         folder = os.path.basename(root) or MODELS_DIR
         print(f"{indent}{folder}/")
         for f in files[:5]:
-            size = os.path.getsize(os.path.join(root, f))
-            print(f"{indent}  {f} ({size / 1024 / 1024:.1f} MB)")
+            fpath = os.path.join(root, f)
+            if os.path.islink(fpath):
+                target = os.readlink(fpath)
+                print(f"{indent}  {f} -> {target}")
+            else:
+                size = os.path.getsize(fpath)
+                print(f"{indent}  {f} ({size / 1024 / 1024:.1f} MB)")
         if len(files) > 5:
             print(f"{indent}  ... and {len(files) - 5} more files")
     
@@ -121,6 +171,9 @@ def create_directory_structure():
                     print(f"[Models]   Moving {item} -> YOLO/{item}")
                     os.makedirs(mfd_yolo, exist_ok=True)
                     shutil.move(src, dst)
+    
+    # Create MFR symlinks for formula recognition
+    create_mfr_symlinks()
 
 
 def download_models():
