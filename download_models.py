@@ -3,7 +3,7 @@
 Download MinerU models from Hugging Face to persistent storage.
 Uses huggingface_hub for reliable incremental downloads.
 
-IMPORTANT: Downloads directly to /root/cache/models (persistent disk).
+IMPORTANT: Downloads directly to /root/.cache/models (persistent disk).
 
 Usage:
     python download_models.py [--force]
@@ -12,12 +12,12 @@ import os
 import sys
 import shutil
 
-# Model storage location (Render persistent disk mounted at /root/cache)
-MODELS_DIR = os.environ.get("MINERU_MODELS_DIR", "/root/cache/models")
+# Model storage location (Render persistent disk mounted at /root/.cache)
+MODELS_DIR = os.environ.get("MINERU_MODELS_DIR", "/root/.cache/models")
 
 # Set HF cache to persistent disk to avoid filling /tmp
-os.environ["HF_HOME"] = "/root/cache/huggingface"
-os.environ["HF_HUB_CACHE"] = "/root/cache/huggingface/hub"
+os.environ["HF_HOME"] = "/root/.cache/huggingface"
+os.environ["HF_HUB_CACHE"] = "/root/.cache/huggingface/hub"
 
 # Official Hugging Face model repository (has correct structure)
 HF_REPO = "opendatalab/PDF-Extract-Kit"
@@ -146,7 +146,7 @@ def download_models():
         print(f"[Models] This will take a while (~10GB)...")
         
         # Download to a temp location first
-        temp_download_dir = "/root/cache/hf_download_temp"
+        temp_download_dir = "/root/.cache/hf_download_temp"
         os.makedirs(temp_download_dir, exist_ok=True)
         
         # Download the entire repo
@@ -260,9 +260,9 @@ def show_disk_usage():
     """Show disk usage for debugging."""
     import subprocess
     print("\n[Models] Disk usage:")
-    subprocess.run(["df", "-h", "/root/cache"], check=False)
-    print("\n[Models] Directory sizes in /root/cache:")
-    subprocess.run(["du", "-sh", "/root/cache/*"], shell=True, check=False)
+    subprocess.run(["df", "-h", "/root/.cache"], check=False)
+    print("\n[Models] Directory sizes in /root/.cache:")
+    subprocess.run(["du", "-sh", "/root/.cache/*"], shell=True, check=False)
 
 
 def main():
