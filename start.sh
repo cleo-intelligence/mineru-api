@@ -37,11 +37,25 @@ EOF
 
 echo "[Startup] Config written to $CONFIG_PATH"
 
-# Check if models exist, if not download them
-KEY_MODEL="$MODELS_DIR/MFD/YOLO/yolo_v8_ft.pt"
-if [ -f "$KEY_MODEL" ]; then
+# Check if models exist by looking for Layout directory (most reliable indicator)
+# Different model repos may have different structures, so check for common patterns
+models_found=false
+
+if [ -d "$MODELS_DIR/Layout" ] || [ -d "$MODELS_DIR/MFD" ]; then
+    models_found=true
+fi
+
+if [ "$models_found" = true ]; then
     echo "[Startup] MinerU models found - full parsing available"
-    ls -la "$MODELS_DIR"
+    echo "[Startup] Models structure:"
+    ls -la "$MODELS_DIR" 2>/dev/null || true
+    # Show subdirectory structure
+    for dir in "$MODELS_DIR"/*/; do
+        if [ -d "$dir" ]; then
+            echo "[Startup]   $(basename "$dir")/"
+            ls "$dir" 2>/dev/null | head -5 | sed 's/^/[Startup]     /'
+        fi
+    done
 else
     echo "[Startup] MinerU models NOT found - starting download..."
     echo "[Startup] This will take ~10-15 minutes for first deployment..."
@@ -49,12 +63,16 @@ else
     # Run the download script
     python /app/download_models.py
     
-    # Verify download succeeded
-    if [ -f "$KEY_MODEL" ]; then
+    # Check again after download
+    if [ -d "$MODELS_DIR/Layout" ] || [ -d "$MODELS_DIR/MFD" ]; then
         echo "[Startup] Models downloaded successfully!"
+        echo "[Startup] Models structure:"
+        ls -la "$MODELS_DIR" 2>/dev/null || true
     else
         echo "[Startup] WARNING: Model download may have failed"
         echo "[Startup] Tesseract OCR fallback will be used"
+        echo "[Startup] Contents of $MODELS_DIR:"
+        ls -la "$MODELS_DIR" 2>/dev/null || echo "[Startup] Directory does not exist"
     fi
 fi
 
