@@ -3,7 +3,7 @@
 Download MinerU models from Hugging Face to persistent storage.
 Run this script on first deployment or when models need updating.
 
-Models are downloaded to /data/models (Render persistent disk).
+Models are downloaded to /root/cache/models (Render persistent disk).
 The magic-pdf.json config points to this location.
 
 Usage:
@@ -17,8 +17,8 @@ import sys
 import shutil
 import subprocess
 
-# Model storage location (Render persistent disk)
-MODELS_DIR = os.environ.get("MINERU_MODELS_DIR", "/data/models")
+# Model storage location (Render persistent disk mounted at /root/cache)
+MODELS_DIR = os.environ.get("MINERU_MODELS_DIR", "/root/cache/models")
 
 # Hugging Face model repository
 HF_REPO = "wanderkid/PDF-Extract-Kit"

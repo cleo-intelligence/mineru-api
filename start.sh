@@ -4,7 +4,7 @@
 
 set -e
 
-MODELS_DIR="${MINERU_MODELS_DIR:-/data/models}"
+MODELS_DIR="${MINERU_MODELS_DIR:-/root/cache/models}"
 CONFIG_PATH="/root/magic-pdf.json"
 
 echo "[Startup] Checking models directory: $MODELS_DIR"
