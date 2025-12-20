@@ -40,7 +40,8 @@ EXPOSE 3000
 
 # Use PORT env var (Render sets this to 3000)
 ENV PORT=3000
-ENV MINERU_MODELS_DIR=/root/cache/models
+# Render persistent disk is mounted at /root/.cache (with dot)
+ENV MINERU_MODELS_DIR=/root/.cache/models
 
 # Run startup script
 CMD ["/app/start.sh"]
