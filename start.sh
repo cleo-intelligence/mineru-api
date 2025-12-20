@@ -16,9 +16,7 @@ echo "[Startup] Models directory: $MODELS_DIR"
 echo "[Startup] Disk usage:"
 df -h /root/.cache 2>/dev/null || echo "[Startup] /root/.cache not mounted as separate disk"
 
-# Create magic-pdf.json config
-# Note: formula-config.enable is false because the model names in the HF repo
-# don't match what magic-pdf expects (unimernet_hf_small_2503 vs unimernet_small)
+# Create magic-pdf.json config with all features enabled
 cat > "$CONFIG_PATH" << EOF
 {
     "device-mode": "cpu",
@@ -29,7 +27,7 @@ cat > "$CONFIG_PATH" << EOF
     },
     "formula-config": {
         "model": "unimernet_small",
-        "enable": false
+        "enable": true
     },
     "layout-config": {
         "model": "layoutlmv3"
@@ -49,16 +47,15 @@ if [ -d "$MODELS_DIR/Layout" ] || [ -d "$MODELS_DIR/MFD" ]; then
 fi
 
 if [ "$models_found" = true ]; then
-    echo "[Startup] MinerU models found - full parsing available"
+    echo "[Startup] MinerU models found - running structure fix..."
+    # Always run the download script to ensure symlinks are created
+    python /app/download_models.py
+    
     echo "[Startup] Models structure:"
     ls -la "$MODELS_DIR" 2>/dev/null || true
-    # Show subdirectory structure
-    for dir in "$MODELS_DIR"/*/; do
-        if [ -d "$dir" ]; then
-            echo "[Startup]   $(basename "$dir")/"
-            ls "$dir" 2>/dev/null | head -5 | sed 's/^/[Startup]     /'
-        fi
-    done
+    # Show MFR symlinks
+    echo "[Startup] MFR directory (with symlinks):"
+    ls -la "$MODELS_DIR/MFR" 2>/dev/null | head -10 || true
 else
     echo "[Startup] MinerU models NOT found - starting download..."
     echo "[Startup] This will take ~10-15 minutes for first deployment..."
