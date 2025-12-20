@@ -19,8 +19,8 @@ MODELS_DIR = os.environ.get("MINERU_MODELS_DIR", "/root/cache/models")
 os.environ["HF_HOME"] = "/root/cache/huggingface"
 os.environ["HF_HUB_CACHE"] = "/root/cache/huggingface/hub"
 
-# Hugging Face model repository
-HF_REPO = "wanderkid/PDF-Extract-Kit"
+# Official Hugging Face model repository (has correct structure)
+HF_REPO = "opendatalab/PDF-Extract-Kit"
 
 
 def check_models_exist() -> bool:
@@ -29,7 +29,7 @@ def check_models_exist() -> bool:
         print(f"[Models] Directory does not exist: {MODELS_DIR}")
         return False
     
-    # Check for key model files
+    # Check for key model files (MinerU expected paths)
     key_files = [
         "Layout/LayoutLMv3/model_final.pth",
         "MFD/YOLO/yolo_v8_ft.pt",
@@ -60,6 +60,7 @@ def download_models():
     
     print(f"[Models] Target directory: {MODELS_DIR}")
     print(f"[Models] HF_HOME: {os.environ.get('HF_HOME')}")
+    print(f"[Models] Repository: {HF_REPO}")
     
     # Ensure directories exist
     os.makedirs(MODELS_DIR, exist_ok=True)
@@ -69,7 +70,7 @@ def download_models():
         print(f"[Models] Downloading from {HF_REPO}...")
         print(f"[Models] This will take a while (~10GB)...")
         
-        # Download to a temp location first, then move
+        # Download to a temp location first
         temp_download_dir = "/root/cache/hf_download_temp"
         os.makedirs(temp_download_dir, exist_ok=True)
         
@@ -93,10 +94,15 @@ def download_models():
                 size = os.path.getsize(item_path)
                 print(f"  [FILE] {item} ({size / 1024 / 1024:.1f} MB)")
         
-        # Move models directory to final location
+        # The opendatalab/PDF-Extract-Kit repo has models in a 'models' subdirectory
         src_models = os.path.join(local_dir, "models")
         if os.path.exists(src_models):
-            print(f"[Models] Moving models from {src_models} to {MODELS_DIR}")
+            print(f"[Models] Found 'models' directory, moving to {MODELS_DIR}")
+            
+            # List contents of models dir
+            print(f"[Models] Contents of {src_models}:")
+            for item in os.listdir(src_models):
+                print(f"  {item}/")
             
             # Remove existing if any
             if os.path.exists(MODELS_DIR):
@@ -105,17 +111,15 @@ def download_models():
             # Move models
             shutil.move(src_models, MODELS_DIR)
             print(f"[Models] Models moved successfully!")
-            
-            # List final contents
-            print(f"[Models] Final contents of {MODELS_DIR}:")
-            for item in os.listdir(MODELS_DIR):
-                print(f"  {item}/")
         else:
-            # Models might be at root level
+            # Models might be at root level (different repo structure)
             print(f"[Models] No 'models' subdir found, checking root level...")
             
-            # Check if model files are at root
-            for item in ["Layout", "MFD", "OCR", "MFR", "TabRec"]:
+            # Check if model directories are at root
+            model_dirs = ["Layout", "MFD", "MFR", "OCR", "TabRec"]
+            found_any = False
+            
+            for item in model_dirs:
                 src = os.path.join(local_dir, item)
                 if os.path.exists(src):
                     dst = os.path.join(MODELS_DIR, item)
@@ -123,6 +127,28 @@ def download_models():
                     if os.path.exists(dst):
                         shutil.rmtree(dst)
                     shutil.move(src, dst)
+                    found_any = True
+            
+            if not found_any:
+                print(f"[Models] ERROR: No model directories found!")
+                print(f"[Models] Contents of {local_dir}:")
+                for item in os.listdir(local_dir):
+                    print(f"  {item}")
+                return False
+        
+        # List final model structure
+        print(f"[Models] Final contents of {MODELS_DIR}:")
+        for root, dirs, files in os.walk(MODELS_DIR):
+            level = root.replace(MODELS_DIR, '').count(os.sep)
+            indent = '  ' * level
+            folder = os.path.basename(root)
+            if level < 3:  # Only show first 3 levels
+                print(f"{indent}{folder}/")
+                for file in files[:3]:  # Show first 3 files per dir
+                    size = os.path.getsize(os.path.join(root, file))
+                    print(f"{indent}  {file} ({size / 1024 / 1024:.1f} MB)")
+                if len(files) > 3:
+                    print(f"{indent}  ... and {len(files) - 3} more files")
         
         # Cleanup temp download dir
         if os.path.exists(temp_download_dir):
@@ -179,6 +205,7 @@ def main():
     print(f"[Models] MinerU Model Downloader")
     print(f"[Models] ========================================")
     print(f"[Models] Models directory: {MODELS_DIR}")
+    print(f"[Models] HuggingFace repo: {HF_REPO}")
     print(f"[Models] Force download: {force}")
     
     show_disk_usage()
